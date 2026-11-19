@@ -253,7 +253,7 @@ jobs:
 
       - name: Compare base and PR
         run: >-
-          uv run --locked --project .github/scripts
+          uv run --locked --no-dev --project .github/scripts
           python .github/scripts/compare_1d.py answer-report/base answer-report/pr
           --summary "$GITHUB_STEP_SUMMARY" --json answer-report/report.json
           --github-annotations

@@ -8,6 +8,7 @@ They use small generated files, so they run in seconds. Run them with
 import contextlib
 import importlib.util
 import io
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -321,6 +322,65 @@ class TestCommandLine(CompareTestCase):
         self.both('a.nc', {'dic': [1.0]})
         _, out = self.run_main('--github-annotations')
         self.assertNotIn('::warning', out)
+
+
+class TestCollectOutputs(unittest.TestCase):
+    """collect_1d_outputs.sh decides what gets compared, so test what it copies."""
+
+    collect = SCRIPT.parent / 'collect_1d_outputs.sh'
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        self.run_dir = self.root / 'CEFI' / 'exps' / 'OM4.single_column.COBALT'
+        outputs = [
+            'RESTART_48hrs/MOM.res.nc',
+            'RESTART_48hrs/ocean.stats',
+            'RESTART_24hrs/ocean.stats',
+            '20040101.ocean_cobalt_budget.nc',
+            '20040102.ocean_daily_subset.nc.0000',
+            'MOM_parameter_doc.all',
+            'COBALT_parameter_doc.short',
+            'available_diags.000000',
+            'SIS.available_diags',
+        ]
+        not_outputs = ['o2_col_budget.nc', 'ncap2_tmp.nc', 'out1', 'input.nml']
+        for rel in outputs + not_outputs:
+            write_text(self.run_dir / rel, rel)
+        self.expected = {*outputs, 'env.txt'}
+
+    def run_collect(self, dest):
+        return subprocess.run(
+            ['bash', str(self.collect), str(dest), 'pr', 'image:tag'],
+            cwd=self.run_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def test_copies_outputs_only(self):
+        dest = self.root / 'out'
+        proc = self.run_collect(dest)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        copied = set(compare_1d.list_files(dest))
+        self.assertEqual(copied, self.expected)
+
+    def test_env_has_every_key(self):
+        dest = self.root / 'out'
+        self.run_collect(dest)
+        env = compare_1d.read_env(dest / 'env.txt')
+        keys = {
+            'role', 'image', 'ocean_bgc_sha', 'cefi_sha', 'gfortran', 'netcdf_c',
+            'netcdf_fortran', 'mpi', 'glibc', 'cpu_model',
+        }
+        self.assertTrue(keys <= set(env), keys - set(env))
+        self.assertEqual((env['role'], env['image']), ('pr', 'image:tag'))
+
+    def test_existing_destination_is_refused(self):
+        dest = self.root / 'out'
+        dest.mkdir()
+        self.assertEqual(self.run_collect(dest).returncode, 2)
 
 
 if __name__ == '__main__':
