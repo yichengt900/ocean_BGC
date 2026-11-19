@@ -135,13 +135,13 @@ def is_netcdf(path: Path) -> bool:
 
 
 def is_parameter_file(rel: str) -> bool:
-    """Return True for parameter docs and diag lists (verdict line 3)."""
+    """Return True for parameter docs and diag lists (verdict line 4)."""
     name = Path(rel).name
     return any(fnmatch.fnmatch(name, pattern) for pattern in PARAMETER_PATTERNS)
 
 
 def is_restart(rel: str) -> bool:
-    """Return True for restart files: *.res.nc, MOM.res_1.nc, *.nc.0000, *.res."""
+    """Return True for restart files, e.g. MOM.res.nc, MOM.res_1.nc, coupler.res."""
     name = Path(rel).name
     return bool(RESTART_NAME.search(name)) or name.endswith('.res')
 
@@ -447,19 +447,9 @@ def headline(report: Report) -> str:
     )
 
 
-def answers_cell(report: Report) -> str:
-    """Return the text for verdict line 1."""
-    if not report.answer_change:
-        return 'same (bitwise)'
-    return 'CHANGED: ' + ', '.join(answer_parts(report))
-
-
-def diagnostics_cell(report: Report) -> str:
-    """Return the text for verdict line 2."""
-    if not report.diagnostics_change:
-        return 'same (bitwise)'
-    changes = ', '.join(diagnostics_parts(report))
-    return f'CHANGED: {changes} (not an answer change)'
+def change_cell(parts: list[str], note: str = '') -> str:
+    """Return the text for verdict line 1 or 2."""
+    return 'CHANGED: ' + ', '.join(parts) + note if parts else 'same (bitwise)'
 
 
 def environment_cell(report: Report) -> str:
@@ -482,14 +472,15 @@ def verdict_table(report: Report) -> list[str]:
         if report.added or report.removed
         else 'none'
     )
+    diag_parts = diagnostics_parts(report)
     n_params, n_meta = len(report.param_diffs), len(report.metadata)
     params = f'changed in {plural(n_params, "file")}' if n_params else 'unchanged'
     metadata = plural(n_meta, 'attribute change') if n_meta else 'none'
     return [
         '| Check | Result |',
         '|---|---|',
-        f'| 1. Answers (model state) | {answers_cell(report)} |',
-        f'| 2. Diagnostics | {diagnostics_cell(report)} |',
+        f'| 1. Answers (model state) | {change_cell(answer_parts(report))} |',
+        f'| 2. Diagnostics | {change_cell(diag_parts, " (not an answer change)")} |',
         f'| 3. Outputs added or removed | {outputs} |',
         f'| 4. Parameters / diag list | {params} |',
         f'| 5. Metadata only | {metadata} |',
