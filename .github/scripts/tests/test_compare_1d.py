@@ -191,6 +191,13 @@ class TestAnswerChanges(CompareTestCase):
         self.assertEqual([d.file for d in report.param_diffs], ['diag_manifest.yaml.0'])
         self.assertFalse(report.answer_change)
 
+    def test_removed_distributed_restart_file_is_an_answer_change(self):
+        self.both('common.nc', {'x': [0.0]})
+        write_nc(self.base / 'RESTART_48hrs/MOM.res_1.nc', {'x': [1.0]})
+        report = self.compare()
+        self.assertEqual(report.removed_restart, ['RESTART_48hrs/MOM.res_1.nc'])
+        self.assertTrue(report.answer_change)
+
     def test_removed_restart_file_is_an_answer_change(self):
         self.both('common.nc', {'x': [0.0]})
         write_nc(self.base / 'RESTART_48hrs/ice_cobalt.res.nc', {'x': [1.0]})
