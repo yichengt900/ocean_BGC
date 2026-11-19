@@ -7,16 +7,18 @@ Scripts used by `.github/workflows/cobalt_ci.yml`. Maintainer: Yi-Cheng Teng (Gi
 For every pull request, the CI runs the 1D COBALT case (BATS column, 48 h, from CEFI-regional-MOM6 `main`) twice: once
 with the PR's ocean_BGC (job `run-obgc_1d-ci`) and once with its base commit (job `base-1d`). The job `answer-report`
 then compares the two runs and writes the result to the job summary page. A warning is shown on the PR's checks page
-if the answers changed or the two runs can't be compared.
+if the answers changed or the two runs can't be compared, and a notice if only diagnostics changed.
 
-The report has four lines:
+The report has five lines:
 
-1. **Answers:** the data of every variable present in both runs is compared bitwise. This covers the restart files
-   (all tracers), `ocean.stats` and `ocean.stats.nc`, and the diag files. A restart variable or file that the PR
-   removed also counts.
-2. **Outputs added or removed:** files or variables that only one run has, for example a new diagnostic.
-3. **Parameters / diag list:** changes in `*_parameter_doc.*` and `available_diags.*`, for example a new parameter.
-4. **Metadata only:** attribute changes, for example units.
+1. **Answers (model state):** the data of every variable present in both runs is compared bitwise in the restart
+   files (all tracers), `ocean.stats`, `ocean.stats.nc` and `seaice.stats`. A restart variable or file that the PR
+   removed also counts. Only this line is an "answer change".
+2. **Diagnostics:** data changes in the diag files. They are reported, for example after a fix to a diagnostic's
+   formula, but are not an answer change.
+3. **Outputs added or removed:** files or variables that only one run has, for example a new diagnostic.
+4. **Parameters / diag list:** changes in `*_parameter_doc.*` and `available_diags.*`, for example a new parameter.
+5. **Metadata only:** attribute changes, for example units.
 
 It also checks that both runs used the same CEFI commit, submodule pins and compiler and library versions (`env.txt`).
 If they didn't, the comparison is marked not valid.

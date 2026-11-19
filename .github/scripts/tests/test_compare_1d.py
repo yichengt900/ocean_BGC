@@ -418,8 +418,16 @@ class TestCollectOutputs(unittest.TestCase):
         self.run_collect(dest)
         env = compare_1d.read_env(dest / 'env.txt')
         keys = {
-            'role', 'image', 'ocean_bgc_sha', 'cefi_sha', 'gfortran', 'netcdf_c',
-            'netcdf_fortran', 'mpi', 'glibc', 'cpu_model',
+            'role',
+            'image',
+            'ocean_bgc_sha',
+            'cefi_sha',
+            'gfortran',
+            'netcdf_c',
+            'netcdf_fortran',
+            'mpi',
+            'glibc',
+            'cpu_model',
         }
         self.assertTrue(keys <= set(env), keys - set(env))
         self.assertEqual((env['role'], env['image']), ('pr', 'image:tag'))

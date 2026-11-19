@@ -19,16 +19,17 @@ What is compared:
       two runs were made in a different setup, the comparison is not valid.
 
 Verdict:
-    1. Answers: the data of variables present on both sides, other output files
-       such as ``ocean.stats``, and restart variables or files that the PR
-       removed.
-    2. Outputs added or removed: files or variables on one side only.
-    3. Parameters / diag list: ``*_parameter_doc.*`` and ``available_diags.*``.
-    4. Metadata only: attribute changes.
+    1. Answers (model state): data in the restart files, ``ocean.stats``,
+       ``ocean.stats.nc`` and ``seaice.stats``, plus restart variables or files
+       that the PR removed. Only this line counts as an answer change.
+    2. Diagnostics: data in the diag files. Reported, but not an answer change.
+    3. Outputs added or removed: files or variables on one side only.
+    4. Parameters / diag list: ``*_parameter_doc.*`` and ``available_diags.*``.
+    5. Metadata only: attribute changes.
 
 Exit status: 0, unless ``--fail-on-diff`` is given. Then 1 means an answer
 change or an invalid comparison, and 2 means an output folder is missing or a
-file can't be read.
+file can't be read. A diagnostics-only change gives 0.
 """
 
 import argparse
@@ -85,8 +86,12 @@ class Report:
     errors: list[str] = dataclasses.field(default_factory=list)
     files_compared: int = 0
     vars_compared: int = 0
+    # Model state (verdict line 1).
     var_diffs: list[VarDiff] = dataclasses.field(default_factory=list)
     text_diffs: list[TextDiff] = dataclasses.field(default_factory=list)
+    # Diagnostics (verdict line 2).
+    diag_diffs: list[VarDiff] = dataclasses.field(default_factory=list)
+    diag_text_diffs: list[TextDiff] = dataclasses.field(default_factory=list)
     param_diffs: list[TextDiff] = dataclasses.field(default_factory=list)
     added: list[str] = dataclasses.field(default_factory=list)
     removed: list[str] = dataclasses.field(default_factory=list)
@@ -100,6 +105,11 @@ class Report:
     def answer_change(self) -> bool:
         """True if the PR changed model answers (verdict line 1)."""
         return bool(self.var_diffs or self.text_diffs or self.removed_restart)
+
+    @property
+    def diagnostics_change(self) -> bool:
+        """True if diag outputs changed (verdict line 2; not an answer change)."""
+        return bool(self.diag_diffs or self.diag_text_diffs)
 
     @property
     def valid(self) -> bool:
@@ -127,6 +137,12 @@ def is_restart(rel: str) -> bool:
         or path.name.endswith('.res.nc')
         or path.name == 'coupler.res'
     )
+
+
+def is_state(rel: str) -> bool:
+    """Return True for files that describe the model state (verdict line 1)."""
+    name = Path(rel).name
+    return is_restart(rel) or name.startswith('ocean.stats') or name == 'seaice.stats'
 
 
 def list_files(root: Path) -> dict[str, Path]:
@@ -252,7 +268,8 @@ def compare_netcdf(rel: str, path_a: Path, path_b: Path, report: Report) -> None
             report.vars_compared += 1
             diff = compare_variable(rel, name, var_a, var_b)
             if diff:
-                report.var_diffs.append(diff)
+                target = report.var_diffs if is_state(rel) else report.diag_diffs
+                target.append(diff)
             # A changed checksum attribute only repeats a data change already listed.
             skip = frozenset({'checksum'}) if diff else frozenset()
             attrs_a, attrs_b = attributes(var_a), attributes(var_b)
@@ -302,12 +319,17 @@ def compare_file(rel: str, path_a: Path, path_b: Path, report: Report) -> None:
         compare_netcdf(rel, path_a, path_b, report)
         return
     if netcdf_a != netcdf_b:
-        report.text_diffs.append(TextDiff(rel, ['file type changed (netCDF vs other)']))
+        diff = TextDiff(rel, ['file type changed (netCDF vs other)'])
+    else:
+        diff = compare_text(rel, path_a, path_b)
+    if not diff:
         return
-    diff = compare_text(rel, path_a, path_b)
-    if diff:
-        target = report.param_diffs if is_parameter_file(rel) else report.text_diffs
-        target.append(diff)
+    if is_parameter_file(rel):
+        report.param_diffs.append(diff)
+    elif is_state(rel):
+        report.text_diffs.append(diff)
+    else:
+        report.diag_text_diffs.append(diff)
 
 
 def compare_dirs(base_dir: Path, pr_dir: Path) -> Report:
@@ -354,16 +376,33 @@ def plural(count: int, noun: str) -> str:
     return f'{count} {noun}' if count == 1 else f'{count} {noun}s'
 
 
-def answer_parts(report: Report) -> list[str]:
-    """Describe the answer changes, for verdict line 1 and the headline."""
+def change_parts(var_diffs: list, text_diffs: list, removed: list) -> list[str]:
+    """Describe changes, e.g. '2 variables with different data'."""
     parts = []
-    if report.var_diffs:
-        parts.append(f'{plural(len(report.var_diffs), "variable")} with different data')
-    if report.text_diffs:
-        parts.append(f'{plural(len(report.text_diffs), "other output file")} different')
-    if report.removed_restart:
-        parts.append(f'{plural(len(report.removed_restart), "restart item")} removed')
+    if var_diffs:
+        parts.append(f'{plural(len(var_diffs), "variable")} with different data')
+    if text_diffs:
+        parts.append(f'{plural(len(text_diffs), "other output file")} different')
+    if removed:
+        parts.append(f'{plural(len(removed), "restart item")} removed')
     return parts
+
+
+def answer_parts(report: Report) -> list[str]:
+    """Describe the model state changes (verdict line 1)."""
+    return change_parts(report.var_diffs, report.text_diffs, report.removed_restart)
+
+
+def diagnostics_parts(report: Report) -> list[str]:
+    """Describe the diagnostics changes (verdict line 2)."""
+    return change_parts(report.diag_diffs, report.diag_text_diffs, [])
+
+
+def cpu_hint(report: Report) -> str:
+    """Return a note if the runs used different CPUs, else ''."""
+    if 'cpu_model' in report.env_info:
+        return ' The runs used different CPUs, so it is possibly the environment.'
+    return ''
 
 
 def headline(report: Report) -> str:
@@ -385,14 +424,19 @@ def headline(report: Report) -> str:
         )
     if report.answer_change:
         text = '**Answer change:** ' + ', '.join(answer_parts(report)) + '.'
-        if 'cpu_model' in report.env_info:
-            text += ' The runs used different CPUs, so it is possibly the environment.'
-        return text
+        if report.diagnostics_change:
+            text += ' Diagnostics also changed.'
+        return text + cpu_hint(report)
+    if report.diagnostics_change:
+        changes = ', '.join(diagnostics_parts(report))
+        text = (
+            f'**No answer change** in the model state; diagnostics changed ({changes}).'
+        )
+        return text + cpu_hint(report)
     variables = plural(report.vars_compared, 'variable')
     files = plural(report.files_compared, 'file')
     return (
-        f'**No answer change:** {variables} in {files} compared, '
-        'all bitwise identical.'
+        f'**No answer change:** {variables} in {files} compared, all bitwise identical.'
     )
 
 
@@ -401,6 +445,14 @@ def answers_cell(report: Report) -> str:
     if not report.answer_change:
         return 'same (bitwise)'
     return 'CHANGED: ' + ', '.join(answer_parts(report))
+
+
+def diagnostics_cell(report: Report) -> str:
+    """Return the text for verdict line 2."""
+    if not report.diagnostics_change:
+        return 'same (bitwise)'
+    changes = ', '.join(diagnostics_parts(report))
+    return f'CHANGED: {changes} (not an answer change)'
 
 
 def environment_cell(report: Report) -> str:
@@ -417,7 +469,7 @@ def environment_cell(report: Report) -> str:
 
 
 def verdict_table(report: Report) -> list[str]:
-    """Return the verdict table (four lines plus the environment)."""
+    """Return the verdict table (five lines plus the environment)."""
     outputs = (
         f'{len(report.added)} added, {len(report.removed)} removed'
         if report.added or report.removed
@@ -429,10 +481,11 @@ def verdict_table(report: Report) -> list[str]:
     return [
         '| Check | Result |',
         '|---|---|',
-        f'| 1. Answers | {answers_cell(report)} |',
-        f'| 2. Outputs added or removed | {outputs} |',
-        f'| 3. Parameters / diag list | {params} |',
-        f'| 4. Metadata only | {metadata} |',
+        f'| 1. Answers (model state) | {answers_cell(report)} |',
+        f'| 2. Diagnostics | {diagnostics_cell(report)} |',
+        f'| 3. Outputs added or removed | {outputs} |',
+        f'| 4. Parameters / diag list | {params} |',
+        f'| 5. Metadata only | {metadata} |',
         f'| Environment | {environment_cell(report)} |',
     ]
 
@@ -477,6 +530,11 @@ def detail_sections(report: Report) -> list[str]:
         lines += details(title, var_diff_rows(report.var_diffs))
     for diff in report.text_diffs:
         lines += details(f'Changed output file: {diff.file}', code_block(diff.lines))
+    if report.diag_diffs:
+        title = f'Changed diagnostics ({len(report.diag_diffs)})'
+        lines += details(title, var_diff_rows(report.diag_diffs))
+    for diff in report.diag_text_diffs:
+        lines += details(f'Changed diag file: {diff.file}', code_block(diff.lines))
     if report.removed or report.added:
         body = [f'- removed: `{item}`' for item in report.removed]
         body += [f'- added: `{item}`' for item in report.added]
@@ -508,9 +566,11 @@ def render_markdown(report: Report) -> str:
 
 def annotations(report: Report) -> list[str]:
     """Return GitHub workflow commands that make problems visible on the PR."""
+    message = headline(report).replace('**', '') + ' See the job summary.'
     if not report.valid or report.answer_change:
-        message = headline(report).replace('**', '')
-        return [f'::warning title=1D answer report::{message} See the job summary.']
+        return [f'::warning title=1D answer report::{message}']
+    if report.diagnostics_change:
+        return [f'::notice title=1D answer report::{message}']
     return []
 
 
@@ -518,6 +578,7 @@ def to_json(report: Report) -> str:
     """Return the report as JSON."""
     data = dataclasses.asdict(report)
     data['answer_change'] = report.answer_change
+    data['diagnostics_change'] = report.diagnostics_change
     data['valid'] = report.valid
     return json.dumps(data, indent=2)
 
