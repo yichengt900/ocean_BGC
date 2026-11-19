@@ -23,6 +23,8 @@ compare_1d = importlib.util.module_from_spec(_spec)
 sys.modules['compare_1d'] = compare_1d
 _spec.loader.exec_module(compare_1d)
 
+STATE = 'RESTART_48hrs/MOM.res.nc'  # model state (restart file)
+DIAG = '20040101.ocean_daily.nc'  # diagnostics
 ENV = 'role={role}\nocean_bgc_sha={sha}\ncefi_sha=abc123\ngfortran=GNU 13.2\n'
 
 
@@ -118,32 +120,32 @@ class TestAnswerChanges(CompareTestCase):
 
     def test_last_bit_change_is_found(self):
         value = np.array([0.1])
-        write_nc(self.base / 'a.nc', {'po4': value})
-        write_nc(self.pr / 'a.nc', {'po4': np.nextafter(value, 1.0)})
+        write_nc(self.base / STATE, {'po4': value})
+        write_nc(self.pr / STATE, {'po4': np.nextafter(value, 1.0)})
         self.assertTrue(self.compare().answer_change)
 
     def test_negative_zero_differs_from_zero(self):
-        write_nc(self.base / 'a.nc', {'fed': np.array([0.0])})
-        write_nc(self.pr / 'a.nc', {'fed': np.array([-0.0])})
+        write_nc(self.base / STATE, {'fed': np.array([0.0])})
+        write_nc(self.pr / STATE, {'fed': np.array([-0.0])})
         self.assertTrue(self.compare().answer_change)
 
     def test_nan_versus_number_differs(self):
-        write_nc(self.base / 'a.nc', {'o2': np.array([1.0, 2.0])})
-        write_nc(self.pr / 'a.nc', {'o2': np.array([1.0, np.nan])})
+        write_nc(self.base / STATE, {'o2': np.array([1.0, 2.0])})
+        write_nc(self.pr / STATE, {'o2': np.array([1.0, np.nan])})
         report = self.compare()
         [diff] = report.var_diffs
         self.assertEqual(diff.n_diff, 1)
         self.assertIsNone(diff.max_abs_diff)
 
     def test_dtype_change(self):
-        write_nc(self.base / 'a.nc', {'nh4': np.array([1.0], dtype='f8')})
-        write_nc(self.pr / 'a.nc', {'nh4': np.array([1.0], dtype='f4')})
+        write_nc(self.base / STATE, {'nh4': np.array([1.0], dtype='f8')})
+        write_nc(self.pr / STATE, {'nh4': np.array([1.0], dtype='f4')})
         [diff] = self.compare().var_diffs
         self.assertEqual(diff.reason, 'dtype')
 
     def test_shape_change(self):
-        write_nc(self.base / 'a.nc', {'no3': np.zeros(3)})
-        write_nc(self.pr / 'a.nc', {'no3': np.zeros(4)})
+        write_nc(self.base / STATE, {'no3': np.zeros(3)})
+        write_nc(self.pr / STATE, {'no3': np.zeros(4)})
         [diff] = self.compare().var_diffs
         self.assertEqual(diff.reason, 'shape')
 
@@ -221,8 +223,43 @@ class TestOtherChanges(CompareTestCase):
     def test_distributed_file_is_read_as_netcdf(self):
         write_nc(self.base / '20040102.ocean_daily_subset.nc.0000', {'chl': [1.0]})
         write_nc(self.pr / '20040102.ocean_daily_subset.nc.0000', {'chl': [2.0]})
-        [diff] = self.compare().var_diffs
+        [diff] = self.compare().diag_diffs
         self.assertEqual(diff.reason, 'data')
+
+
+class TestDiagnostics(CompareTestCase):
+    """Diagnostics changes are reported but are not an answer change."""
+
+    def test_diag_only_change_is_not_an_answer_change(self):
+        write_nc(self.base / DIAG, {'chl': [1.0, 2.0]})
+        write_nc(self.pr / DIAG, {'chl': [1.0, 2.5]})
+        report = self.compare()
+        self.assertFalse(report.answer_change)
+        self.assertTrue(report.diagnostics_change)
+        [diff] = report.diag_diffs
+        self.assertEqual((diff.name, diff.n_diff), ('chl', 1))
+        self.assertEqual(report.var_diffs, [])
+        text = compare_1d.headline(report)
+        self.assertIn('No answer change', text)
+        self.assertIn('diagnostics', text)
+
+    def test_ocean_stats_nc_is_model_state(self):
+        write_nc(self.base / 'ocean.stats.nc', {'dic': [1.0]})
+        write_nc(self.pr / 'ocean.stats.nc', {'dic': [2.0]})
+        report = self.compare()
+        self.assertTrue(report.answer_change)
+        self.assertFalse(report.diagnostics_change)
+
+    def test_state_and_diag_changes_are_both_reported(self):
+        write_nc(self.base / STATE, {'dic': [1.0]})
+        write_nc(self.pr / STATE, {'dic': [2.0]})
+        write_nc(self.base / DIAG, {'chl': [1.0]})
+        write_nc(self.pr / DIAG, {'chl': [2.0]})
+        report = self.compare()
+        self.assertTrue(report.answer_change)
+        self.assertTrue(report.diagnostics_change)
+        self.assertEqual([d.name for d in report.var_diffs], ['dic'])
+        self.assertEqual([d.name for d in report.diag_diffs], ['chl'])
 
 
 class TestEnvironment(CompareTestCase):
@@ -240,8 +277,8 @@ class TestEnvironment(CompareTestCase):
         write_text(self.base / 'env.txt', base_env)
         pr_env = ENV.format(role='pr', sha='b') + 'cpu_model=EPYC 9V74\n'
         write_text(self.pr / 'env.txt', pr_env)
-        write_nc(self.base / 'a.nc', {'o2': [1.0]})
-        write_nc(self.pr / 'a.nc', {'o2': [1.5]})
+        write_nc(self.base / STATE, {'o2': [1.0]})
+        write_nc(self.pr / STATE, {'o2': [1.5]})
         report = self.compare()
         self.assertTrue(report.valid)
         self.assertIn('cpu_model', report.env_info)
@@ -282,7 +319,8 @@ class TestCommandLine(CompareTestCase):
         self.make_answer_change()
         status, out = self.run_main()
         self.assertEqual(status, 0)
-        self.assertIn('| 1. Answers | CHANGED: 1 variable with different data |', out)
+        row = '| 1. Answers (model state) | CHANGED: 1 variable with different data |'
+        self.assertIn(row, out)
 
     def test_fail_on_diff(self):
         self.make_answer_change()
@@ -307,16 +345,25 @@ class TestCommandLine(CompareTestCase):
         self.assertEqual(status, 0)
         text = summary.read_text(encoding='utf-8')
         rows = (
-            '1. Answers',
-            '2. Outputs added or removed',
-            '3. Parameters / diag list',
-            '4. Metadata only',
+            '1. Answers (model state)',
+            '2. Diagnostics',
+            '3. Outputs added or removed',
+            '4. Parameters / diag list',
+            '5. Metadata only',
             'Environment',
         )
         for row in rows:
             self.assertIn(row, text)
         self.assertIn('::warning title=1D answer report::Answer change', out)
         self.assertIn('"answer_change": true', json_path.read_text(encoding='utf-8'))
+
+    def test_diag_only_change_passes_gate_with_notice(self):
+        write_nc(self.base / DIAG, {'chl': [1.0]})
+        write_nc(self.pr / DIAG, {'chl': [2.0]})
+        status, out = self.run_main('--fail-on-diff', '--github-annotations')
+        self.assertEqual(status, 0)
+        self.assertIn('::notice title=1D answer report::', out)
+        self.assertNotIn('::warning', out)
 
     def test_no_annotation_without_change(self):
         self.both('a.nc', {'dic': [1.0]})
