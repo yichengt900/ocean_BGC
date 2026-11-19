@@ -40,6 +40,7 @@ import argparse
 import dataclasses
 import difflib
 import fnmatch
+import re
 import sys
 from pathlib import Path
 
@@ -59,6 +60,7 @@ PARAMETER_PATTERNS = (
     'diag_manifest.yaml*',
 )
 STATE_FILES = ('seaice.stats', 'stocks.out')
+RESTART_NAME = re.compile(r'\.res(_\d+)?\.nc')
 MAX_ROWS = 50
 MAX_DIFF_LINES = 40
 
@@ -139,9 +141,9 @@ def is_parameter_file(rel: str) -> bool:
 
 
 def is_restart(rel: str) -> bool:
-    """Return True for restart files (*.res.nc, also distributed, and *.res)."""
+    """Return True for restart files: *.res.nc, MOM.res_1.nc, *.nc.0000, *.res."""
     name = Path(rel).name
-    return '.res.nc' in name or name.endswith('.res')
+    return bool(RESTART_NAME.search(name)) or name.endswith('.res')
 
 
 def is_state(rel: str) -> bool:
