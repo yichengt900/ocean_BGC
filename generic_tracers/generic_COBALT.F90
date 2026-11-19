@@ -666,7 +666,7 @@ contains
                    default= 1.1, scale = I_sperd)
     call get_param(param_file, "generic_COBALT", "P_C_max_Sm_hl", phyto(SMP)%P_C_max_hl, &
                    "maximum photosynthesis rate at 0 deg. C, high-light adapted small phytoplankton", units="day-1", &
-                   default= 1.0, scale = I_sperd)
+                   default= 1.05, scale = I_sperd)
     call get_param(param_file, "generic_COBALT", "P_C_max_Di_ll", phyto(DIAZ)%P_C_max_ll, &
                    "maximum photosynthesis rate at 0 deg. C, low-light adapted diazotrophs", units="day-1", &
                    default= 0.3, scale = I_sperd)
