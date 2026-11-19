@@ -836,7 +836,7 @@ module COBALT_send_diag
           do j = jsc, jec ; do i = isc, iec ; !{
             k_200 = 1
             do k = 2, grid_kmt(i,j)  !{
-              if (rho_dzt_200(i,j) .lt. cobalt%Rho_0 * 200.0) then
+              if (rho_dzt_200(i,j) .lt. cobalt%Rho_0 * 201.0) then
                 k_200 = k
                 rho_dzt_200(i,j) = rho_dzt_200(i,j) + rho_dzt(i,j,k)
                 cobalt%f_mesozoo_200(i,j) = cobalt%f_mesozoo_200(i,j) + &
@@ -845,7 +845,7 @@ module COBALT_send_diag
             enddo  !} k
 
             if (k_200 .gt. 1 .and. k_200 .lt. grid_kmt(i,j)) then
-              drho_dzt = cobalt%Rho_0 * 200.0 - rho_dzt_200(i,j)
+              drho_dzt = cobalt%Rho_0 * 201.0 - rho_dzt_200(i,j)
               cobalt%f_mesozoo_200(i,j) = cobalt%f_mesozoo_200(i,j) + &
                 (zoo(MDZ)%f_n(i,j,k_200)+zoo(LGZ)%f_n(i,j,k_200))*drho_dzt
             endif
