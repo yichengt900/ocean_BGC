@@ -179,7 +179,9 @@ class TestAnswerChanges(CompareTestCase):
             write_text(self.base / name, 'S 1.0\n')
             write_text(self.pr / name, 'S 1.5\n')
         report = self.compare()
-        self.assertEqual(sorted(d.file for d in report.text_diffs), ['seaice.stats', 'stocks.out'])
+        self.assertEqual(
+            sorted(d.file for d in report.text_diffs), ['seaice.stats', 'stocks.out']
+        )
         self.assertTrue(report.answer_change)
 
     def test_diag_manifest_is_a_diag_list(self):
@@ -359,13 +361,10 @@ class TestCommandLine(CompareTestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(compare_1d.main(args), 2)
 
-    def test_summary_json_and_annotation(self):
+    def test_summary_and_annotation(self):
         self.make_answer_change()
         summary = self.base.parent / 'summary.md'
-        json_path = self.base.parent / 'report.json'
-        status, out = self.run_main(
-            '--summary', str(summary), '--json', str(json_path), '--github-annotations'
-        )
+        status, out = self.run_main('--summary', str(summary), '--github-annotations')
         self.assertEqual(status, 0)
         text = summary.read_text(encoding='utf-8')
         rows = (
@@ -379,7 +378,7 @@ class TestCommandLine(CompareTestCase):
         for row in rows:
             self.assertIn(row, text)
         self.assertIn('::warning title=1D answer report::Answer change', out)
-        self.assertIn('"answer_change": true', json_path.read_text(encoding='utf-8'))
+        self.assertIn('| 1. Answers (model state) |', out)  # also printed to the log
 
     def test_diag_only_change_passes_gate_with_notice(self):
         write_nc(self.base / DIAG, {'chl': [1.0]})

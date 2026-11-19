@@ -35,9 +35,13 @@ for dir in RESTART_*; do
   fi
 done
 # FMS diag files start with the date (e.g. 20040101.ocean_cobalt_budget.nc).
-# Also the parameter docs and the diag lists.
+# Also the parameter docs, the diag lists and the other outputs that driver.sh
+# leaves in the run folder (checked against a real run). Not copied: logs
+# (out*, err*, logfile.*, which differ from run to run) and the files written by
+# the budget checks.
 for file in [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].* *_parameter_doc.* \
-  available_diags.* *.available_diags; do
+  available_diags.* *.available_diags diag_manifest.yaml* seaice.stats stocks.out \
+  sea_ice_geometry.nc Vertical_coordinate.nc; do
   if [[ -f $file ]]; then
     cp "$file" "$dest/"
   fi

@@ -255,17 +255,7 @@ jobs:
         run: >-
           uv run --locked --no-dev --project .github/scripts
           python .github/scripts/compare_1d.py answer-report/base answer-report/pr
-          --summary "$GITHUB_STEP_SUMMARY" --json answer-report/report.json
-          --github-annotations
-
-      - name: Upload report
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: 1d-answer-report
-          path: answer-report/report.json
-          if-no-files-found: ignore
-          retention-days: 14
+          --summary "$GITHUB_STEP_SUMMARY" --github-annotations
 
   # Lint and unit tests for the CI helper scripts in .github/scripts.
   ci-scripts:

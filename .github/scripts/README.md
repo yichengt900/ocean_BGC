@@ -12,12 +12,13 @@ if the answers changed or the two runs can't be compared, and a notice if only d
 The report has five lines:
 
 1. **Answers (model state):** the data of every variable present in both runs is compared bitwise in the restart
-   files (all tracers), `ocean.stats`, `ocean.stats.nc` and `seaice.stats`. A restart variable or file that the PR
+   files (all tracers), `ocean.stats`, `ocean.stats.nc`, `seaice.stats` and `stocks.out`. A restart variable or file that the PR
    removed also counts. Only this line is an "answer change".
 2. **Diagnostics:** data changes in the diag files. They are reported, for example after a fix to a diagnostic's
    formula, but are not an answer change.
 3. **Outputs added or removed:** files or variables that only one run has, for example a new diagnostic.
-4. **Parameters / diag list:** changes in `*_parameter_doc.*` and `available_diags.*`, for example a new parameter.
+4. **Parameters / diag list:** changes in `*_parameter_doc.*`, `available_diags.*` and `diag_manifest.yaml*`, for
+   example a new parameter.
 5. **Metadata only:** attribute changes, for example units.
 
 It also checks that both runs used the same CEFI commit, submodule pins and compiler and library versions (`env.txt`).

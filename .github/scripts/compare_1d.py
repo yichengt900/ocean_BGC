@@ -6,8 +6,10 @@ with the PR. This script compares the two output folders and writes a short
 report.
 
 Usage:
-    compare_1d.py BASE_DIR PR_DIR [--summary FILE] [--json FILE]
-                  [--github-annotations] [--fail-on-diff]
+    compare_1d.py BASE_DIR PR_DIR [--summary FILE] [--github-annotations]
+                  [--fail-on-diff]
+
+The full Markdown report is always printed, so it also appears in the job log.
 
 What is compared:
     * netCDF files (found by their header bytes, so ``*.nc.0000`` files count):
@@ -20,11 +22,13 @@ What is compared:
 
 Verdict:
     1. Answers (model state): data in the restart files, ``ocean.stats``,
-       ``ocean.stats.nc`` and ``seaice.stats``, plus restart variables or files
-       that the PR removed. Only this line counts as an answer change.
+       ``ocean.stats.nc``, ``seaice.stats`` and ``stocks.out``, plus restart
+       variables or files that the PR removed. Only this line counts as an
+       answer change.
     2. Diagnostics: data in the diag files. Reported, but not an answer change.
     3. Outputs added or removed: files or variables on one side only.
-    4. Parameters / diag list: ``*_parameter_doc.*`` and ``available_diags.*``.
+    4. Parameters / diag list: ``*_parameter_doc.*``, ``available_diags.*`` and
+       ``diag_manifest.yaml*``.
     5. Metadata only: attribute changes.
 
 Exit status: 0, unless ``--fail-on-diff`` is given. Then 1 means an answer
@@ -36,7 +40,6 @@ import argparse
 import dataclasses
 import difflib
 import fnmatch
-import json
 import sys
 from pathlib import Path
 
@@ -49,7 +52,13 @@ ENV_FILE = 'env.txt'
 ENV_EXPECTED_DIFFERENT = frozenset({'role', 'ocean_bgc_sha'})
 # env.txt keys that may differ without making the comparison invalid.
 ENV_INFO_ONLY = frozenset({'cpu_model'})
-PARAMETER_PATTERNS = ('*_parameter_doc.*', 'available_diags.*', '*.available_diags')
+PARAMETER_PATTERNS = (
+    '*_parameter_doc.*',
+    'available_diags.*',
+    '*.available_diags',
+    'diag_manifest.yaml*',
+)
+STATE_FILES = ('seaice.stats', 'stocks.out')
 MAX_ROWS = 50
 MAX_DIFF_LINES = 40
 
@@ -130,19 +139,15 @@ def is_parameter_file(rel: str) -> bool:
 
 
 def is_restart(rel: str) -> bool:
-    """Return True for files that hold model state for a restart."""
-    path = Path(rel)
-    return (
-        path.parts[0].startswith('RESTART')
-        or path.name.endswith('.res.nc')
-        or path.name == 'coupler.res'
-    )
+    """Return True for restart files (*.res.nc, also distributed, and *.res)."""
+    name = Path(rel).name
+    return '.res.nc' in name or name.endswith('.res')
 
 
 def is_state(rel: str) -> bool:
     """Return True for files that describe the model state (verdict line 1)."""
     name = Path(rel).name
-    return is_restart(rel) or name.startswith('ocean.stats') or name == 'seaice.stats'
+    return is_restart(rel) or name.startswith('ocean.stats') or name in STATE_FILES
 
 
 def list_files(root: Path) -> dict[str, Path]:
@@ -574,15 +579,6 @@ def annotations(report: Report) -> list[str]:
     return []
 
 
-def to_json(report: Report) -> str:
-    """Return the report as JSON."""
-    data = dataclasses.asdict(report)
-    data['answer_change'] = report.answer_change
-    data['diagnostics_change'] = report.diagnostics_change
-    data['valid'] = report.valid
-    return json.dumps(data, indent=2)
-
-
 def exit_status(report: Report, fail_on_diff: bool) -> int:
     """Return the exit status described in the module docstring."""
     if not fail_on_diff:
@@ -604,7 +600,6 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         '--summary', type=Path, help='append the Markdown report to this file'
     )
-    parser.add_argument('--json', type=Path, dest='json_path', help='write JSON here')
     parser.add_argument(
         '--github-annotations',
         action='store_true',
@@ -623,14 +618,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     report = compare_dirs(args.base_dir, args.pr_dir)
     markdown = render_markdown(report)
+    print(markdown, end='')
     if args.summary:
         with args.summary.open('a', encoding='utf-8') as stream:
             stream.write(markdown)
-        print(headline(report).replace('**', ''))
-    else:
-        print(markdown, end='')
-    if args.json_path:
-        args.json_path.write_text(to_json(report) + '\n', encoding='utf-8')
     if args.github_annotations:
         for line in annotations(report):
             print(line)
