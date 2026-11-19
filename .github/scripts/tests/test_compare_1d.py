@@ -165,6 +165,30 @@ class TestAnswerChanges(CompareTestCase):
         self.assertEqual(report.removed_restart, ['RESTART_48hrs/MOM.res.nc: co3_ion'])
         self.assertTrue(report.answer_change)
 
+    def test_removed_stock_in_ocean_stats_nc_is_not_a_restart_item(self):
+        rel = 'RESTART_48hrs/ocean.stats.nc'
+        write_nc(self.base / rel, {'dic': [1.0], 'cased': [2.0]})
+        write_nc(self.pr / rel, {'dic': [1.0]})
+        report = self.compare()
+        self.assertEqual(report.removed, ['RESTART_48hrs/ocean.stats.nc: cased'])
+        self.assertEqual(report.removed_restart, [])
+        self.assertFalse(report.answer_change)
+
+    def test_stocks_and_seaice_stats_are_model_state(self):
+        for name in ('stocks.out', 'seaice.stats'):
+            write_text(self.base / name, 'S 1.0\n')
+            write_text(self.pr / name, 'S 1.5\n')
+        report = self.compare()
+        self.assertEqual(sorted(d.file for d in report.text_diffs), ['seaice.stats', 'stocks.out'])
+        self.assertTrue(report.answer_change)
+
+    def test_diag_manifest_is_a_diag_list(self):
+        write_text(self.base / 'diag_manifest.yaml.0', 'fields: [chl]\n')
+        write_text(self.pr / 'diag_manifest.yaml.0', 'fields: [chl, new]\n')
+        report = self.compare()
+        self.assertEqual([d.file for d in report.param_diffs], ['diag_manifest.yaml.0'])
+        self.assertFalse(report.answer_change)
+
     def test_removed_restart_file_is_an_answer_change(self):
         self.both('common.nc', {'x': [0.0]})
         write_nc(self.base / 'RESTART_48hrs/ice_cobalt.res.nc', {'x': [1.0]})
@@ -391,8 +415,21 @@ class TestCollectOutputs(unittest.TestCase):
             'COBALT_parameter_doc.short',
             'available_diags.000000',
             'SIS.available_diags',
+            'seaice.stats',
+            'stocks.out',
+            'sea_ice_geometry.nc',
+            'Vertical_coordinate.nc',
+            'diag_manifest.yaml.0',
         ]
-        not_outputs = ['o2_col_budget.nc', 'ncap2_tmp.nc', 'out1', 'input.nml']
+        not_outputs = [
+            'o2_col_budget.nc',
+            'ncap2_tmp.nc',
+            'out1',
+            'err1',
+            'org.txt',
+            'input.nml',
+            'logfile.000000.out',
+        ]
         for rel in outputs + not_outputs:
             write_text(self.run_dir / rel, rel)
         self.expected = {*outputs, 'env.txt'}
